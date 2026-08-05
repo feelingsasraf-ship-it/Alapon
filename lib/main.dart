@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -125,7 +126,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
 
   void verifyPhoneNumber(BuildContext context) async {
     String phoneNumber = phoneController.text.trim();
-    
+
     if (phoneNumber.length == 11 && phoneNumber.startsWith('01')) {
       phoneNumber = '+88$phoneNumber';
     } else {
@@ -309,7 +310,7 @@ class _OtpScreenState extends State<OtpScreen> {
       );
 
       await FirebaseAuth.instance.signInWithCredential(credential);
-      
+
       setState(() {
         isLoading = false;
       });
@@ -355,7 +356,7 @@ class _OtpScreenState extends State<OtpScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              '${widget.phoneNumber} নামبرটিতে ৬ ডিজিটের কোড পাঠানো হয়েছে',
+              '${widget.phoneNumber} নাম্বারটিতে ৬ ডিজিটের কোড পাঠানো হয়েছে',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 15, color: Color(0xFF526D82)),
             ),
@@ -421,71 +422,102 @@ class _OtpScreenState extends State<OtpScreen> {
 }
 
 // ==========================================
-// ৪. চ্যাট লিস্ট স্ক্রিন (Chat List Screen)
+// ৪. চ্যাট লিস্ট স্ক্রিন (Chat List Screen - Firestore Realtime)
 // ==========================================
-class ChatModel {
-  final String name;
-  final String message;
-  final String time;
-  final String profileImage;
-  final int unreadCount;
-
-  ChatModel({
-    required this.name,
-    required this.message,
-    required this.time,
-    required this.profileImage,
-    required this.unreadCount,
-  });
-}
-
-class ChatListScreen extends StatelessWidget {
+class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
 
-  static final List<ChatModel> dummyChats = [
-    ChatModel(
-      name: 'রফিক আহমেদ',
-      message: 'কেমন আছিস ভাই? প্রজেক্টের কি খবর?',
-      time: '১০:৩০ AM',
-      profileImage: 'https://i.pravatar.cc/150?img=11',
-      unreadCount: 2,
-    ),
-    ChatModel(
-      name: 'সাদিয়া ইসলাম',
-      message: 'ফ্লাটার কোডটা একটু পাঠিয়ে দিও তো।',
-      time: '৯:১৫ AM',
-      profileImage: 'https://i.pravatar.cc/150?img=5',
-      unreadCount: 0,
-    ),
-    ChatModel(
-      name: 'তানভীর হাসান',
-      message: 'কাল দেখা হচ্ছে তাহলে কনফার্ম।',
-      time: 'গতকাল',
-      profileImage: 'https://i.pravatar.cc/150?img=12',
-      unreadCount: 1,
-    ),
-    ChatModel(
-      name: 'ফাতেমা তুজ জোহরা',
-      message: 'ধন্যবাদ ভাইয়া!',
-      time: 'গতকাল',
-      profileImage: 'https://i.pravatar.cc/150?img=9',
-      unreadCount: 0,
-    ),
-    ChatModel(
-      name: '+8801812345678',
-      message: 'হ্যালো, কেমন আছেন?',
-      time: '২ দিন আগে',
-      profileImage: 'https://i.pravatar.cc/150?img=3',
-      unreadCount: 0,
-    ),
-    ChatModel(
-      name: 'কামরুল ইসলাম',
-      message: 'মিটিংয়ে জয়েন করো দ্রুত।',
-      time: '৩ দিন আগে',
-      profileImage: 'https://i.pravatar.cc/150?img=15',
-      unreadCount: 5,
-    ),
-  ];
+  @override
+  State<ChatListScreen> createState() => _ChatListScreenState();
+}
+
+class _ChatListScreenState extends State<ChatListScreen> {
+  String get _currentUserPhone => FirebaseAuth.instance.currentUser?.phoneNumber ?? '';
+
+  // Helper: Timestamp থেকে readable time
+  String _formatTime(Timestamp? timestamp) {
+    if (timestamp == null) return 'এখন';
+    final dt = timestamp.toDate();
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  void _showAddContactDialog() {
+    final TextEditingController newNumberController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('নতুন চ্যাট শুরু করুন'),
+          content: TextField(
+            controller: newNumberController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              hintText: 'মোবাইল নাম্বার দিন (যেমন: 01XXXXXXXXX)',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('বাতিল'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E63B8)),
+              onPressed: () async {
+                String number = newNumberController.text.trim();
+
+                if (number.isEmpty) return;
+
+                // ফোন নাম্বার ফরম্যাট
+                if (number.length == 11 && number.startsWith('01')) {
+                  number = '+88$number';
+                } else if (!number.startsWith('+')) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('সঠিক মোবাইল নাম্বার দিন')),
+                  );
+                  return;
+                }
+
+                if (number == _currentUserPhone) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('নিজের নাম্বারে চ্যাট শুরু করা যাবে না')),
+                  );
+                  return;
+                }
+
+                Navigator.pop(context);
+
+                try {
+                  List<String> participants = [_currentUserPhone, number];
+                  participants.sort();
+                  String chatId = participants.join('_');
+
+                  final chatDoc = FirebaseFirestore.instance.collection('chats').doc(chatId);
+                  final docSnapshot = await chatDoc.get();
+
+                  if (!docSnapshot.exists) {
+                    await chatDoc.set({
+                      'participants': participants,
+                      'lastMessage': 'চ্যাট শুরু হয়েছে...',
+                      'lastMessageTime': FieldValue.serverTimestamp(),
+                      'createdAt': FieldValue.serverTimestamp(),
+                    });
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('ত্রুটি: $e')),
+                  );
+                }
+              },
+              child: const Text('এড করুন', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -500,10 +532,6 @@ class ChatListScreen extends StatelessWidget {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search, color: Colors.white),
-            onPressed: () {},
-          ),
-          IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
@@ -517,62 +545,92 @@ class ChatListScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView.builder(
-        itemCount: dummyChats.length,
-        itemBuilder: (context, index) {
-          final chat = dummyChats[index];
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: CircleAvatar(
-              radius: 28,
-              backgroundImage: NetworkImage(chat.profileImage),
-            ),
-            title: Text(
-              chat.name,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Color(0xFF0F2C59),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('chats')
+            .where('participants', arrayContains: _currentUserPhone)
+            .orderBy('lastMessageTime', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'ত্রুটি: ${snapshot.error}\n\n(Composite Index তৈরি করতে হবে Firebase Console থেকে)',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.red),
+                ),
               ),
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4.0),
+            );
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(
               child: Text(
-                chat.message,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Color(0xFF526D82), fontSize: 14),
+                'কোনো চ্যাট নেই। নিচে (+) আইকনে ক্লিক করে নাম্বার যোগ করুন।',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF526D82), fontSize: 16),
               ),
-            ),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  chat.time,
+            );
+          }
+
+          final chats = snapshot.data!.docs;
+
+          return ListView.builder(
+            itemCount: chats.length,
+            itemBuilder: (context, index) {
+              final chat = chats[index];
+              final data = chat.data() as Map<String, dynamic>;
+              final List<dynamic> participants = data['participants'] ?? [];
+              final String otherPhone = participants.firstWhere(
+                (p) => p != _currentUserPhone,
+                orElse: () => 'অজানা',
+              );
+
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                leading: const CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Color(0xFF1E63B8),
+                  child: Icon(Icons.person, color: Colors.white),
+                ),
+                title: Text(
+                  otherPhone,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Color(0xFF0F2C59),
+                  ),
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Text(
+                    data['lastMessage'] ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Color(0xFF526D82), fontSize: 14),
+                  ),
+                ),
+                trailing: Text(
+                  _formatTime(data['lastMessageTime']),
                   style: const TextStyle(color: Colors.grey, fontSize: 12),
                 ),
-                const SizedBox(height: 6),
-                if (chat.unreadCount > 0)
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF1E63B8),
-                      shape: BoxShape.circle,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ChatDetailScreen(
+                        chatId: chat.id,
+                        contactName: otherPhone,
+                      ),
                     ),
-                    child: Text(
-                      '${chat.unreadCount}',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-              ],
-            ),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ChatDetailScreen(contactName: chat.name),
-                ),
+                  );
+                },
               );
             },
           );
@@ -580,23 +638,25 @@ class ChatListScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF1E63B8),
-        child: const Icon(Icons.chat, color: Colors.white),
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('নতুন চ্যাট শুরু করার অপশন')),
-          );
-        },
+        child: const Icon(Icons.add, color: Colors.white, size: 28),
+        onPressed: _showAddContactDialog,
       ),
     );
   }
 }
 
 // ==========================================
-// ৫. চ্যাটিং কনভারসেশন স্ক্রিন (Chat Detail Screen)
+// ৫. চ্যাটিং কনভারসেশন স্ক্রিন (Chat Detail Screen - Firestore Realtime)
 // ==========================================
 class ChatDetailScreen extends StatefulWidget {
+  final String chatId;
   final String contactName;
-  const ChatDetailScreen({super.key, required this.contactName});
+
+  const ChatDetailScreen({
+    super.key,
+    required this.chatId,
+    required this.contactName,
+  });
 
   @override
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
@@ -604,19 +664,46 @@ class ChatDetailScreen extends StatefulWidget {
 
 class _ChatDetailScreenState extends State<ChatDetailScreen> {
   final TextEditingController _messageController = TextEditingController();
-  final List<String> _messages = [
-    'কেমন আছিস ভাই?',
-    'আলহামদুলিল্লাহ ভালো, তুই কেমন আছিস?',
-    'এই তো ভালো। প্রজেক্টের কাজ কতদূর?',
-    'চলছে, আজকেই শেষ হয়ে যাবে আশা করি।'
-  ];
+  final ScrollController _scrollController = ScrollController();
 
-  void _sendMessage() {
-    if (_messageController.text.trim().isEmpty) return;
-    setState(() {
-      _messages.add(_messageController.text.trim());
-      _messageController.clear();
-    });
+  String get _currentUserPhone => FirebaseAuth.instance.currentUser?.phoneNumber ?? '';
+
+  Future<void> _sendMessage() async {
+    String text = _messageController.text.trim();
+    if (text.isEmpty) return;
+
+    _messageController.clear();
+
+    try {
+      final chatRef = FirebaseFirestore.instance.collection('chats').doc(widget.chatId);
+
+      // মেসেজ সাব-কালেকশনে যোগ করা
+      await chatRef.collection('messages').add({
+        'sender': _currentUserPhone,
+        'text': text,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // চ্যাটের লাস্ট মেসেজ আপডেট
+      await chatRef.update({
+        'lastMessage': text,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('বার্তা পাঠাতে ব্যর্থ: $e')),
+        );
+      }
+    }
+  }
+
+  String _formatMsgTime(Timestamp? timestamp) {
+    if (timestamp == null) return '';
+    final dt = timestamp.toDate();
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   @override
@@ -630,7 +717,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           children: [
             const CircleAvatar(
               radius: 18,
-              backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=11'),
+              backgroundColor: Color(0xFF1E63B8),
+              child: Icon(Icons.person, color: Colors.white, size: 20),
             ),
             const SizedBox(width: 10),
             Text(
@@ -643,28 +731,101 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                bool isMe = index % 2 != 0;
-                return Align(
-                  alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: isMe ? const Color(0xFF1E63B8) : Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('chats')
+                  .doc(widget.chatId)
+                  .collection('messages')
+                  .orderBy('timestamp', descending: false)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(child: Text('ত্রুটি: ${snapshot.error}'));
+                }
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(
                     child: Text(
-                      _messages[index],
-                      style: TextStyle(
-                        color: isMe ? Colors.white : const Color(0xFF0F2C59),
-                        fontSize: 15,
-                      ),
+                      'আপনার প্রথম বার্তা পাঠান...',
+                      style: TextStyle(color: Colors.grey),
                     ),
-                  ),
+                  );
+                }
+
+                final messages = snapshot.data!.docs;
+
+                // নতুন মেসেজ আসলে অটো-স্ক্রল নিচে
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_scrollController.hasClients) {
+                    _scrollController.animateTo(
+                      _scrollController.position.maxScrollExtent,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    );
+                  }
+                });
+
+                return ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final msg = messages[index];
+                    final data = msg.data() as Map<String, dynamic>;
+                    final bool isMe = data['sender'] == _currentUserPhone;
+                    final Timestamp? ts = data['timestamp'];
+
+                    return Align(
+                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.75,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isMe ? const Color(0xFF1E63B8) : Colors.white,
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(16),
+                            topRight: const Radius.circular(16),
+                            bottomLeft: Radius.circular(isMe ? 16 : 4),
+                            bottomRight: Radius.circular(isMe ? 4 : 16),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              data['text'] ?? '',
+                              style: TextStyle(
+                                color: isMe ? Colors.white : const Color(0xFF0F2C59),
+                                fontSize: 15,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _formatMsgTime(ts),
+                              style: TextStyle(
+                                color: isMe ? Colors.white70 : Colors.grey,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 );
               },
             ),
@@ -674,13 +835,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             color: Colors.white,
             child: Row(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.add, color: Color(0xFF1E63B8)),
-                  onPressed: () {},
-                ),
                 Expanded(
                   child: TextField(
                     controller: _messageController,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _sendMessage(),
                     decoration: const InputDecoration(
                       hintText: 'একটি বার্তা লিখুন...',
                       border: InputBorder.none,
