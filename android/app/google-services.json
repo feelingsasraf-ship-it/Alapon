@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "802976468411",
+    "project_id": "alaponapp-1d179",
+    "storage_bucket": "alaponapp-1d179.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:802976468411:android:e72ac15ced8bb625bb489e",
+        "android_client_info": {
+          "package_name": "com.example.alapon_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVSfG8qj9RonRTEWn86aSYQGDFoNrAMGY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
